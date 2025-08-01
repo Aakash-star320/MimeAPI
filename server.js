@@ -14,7 +14,7 @@ const app = express();
 const port = process.env.PORT;
 
 // Whisper FastAPI server configuration
-const WHISPER_SERVER_URL = process.env.WHSIPER_SERVER;
+const WHISPER_SERVER_URL = process.env.WHISPER_SERVER;
 
 console.log('🚀 ===== EXPRESS SERVER STARTING =====');
 console.log(`📅 Timestamp: ${new Date().toISOString()}`);
@@ -432,7 +432,7 @@ async function sendAudioToWhisperServer(audioFilePath, requestId) {
   }
 }
 
-// IMPROVED: Function to clean transcribed text by removing punctuation
+// FIXED: Function to clean transcribed text by removing ALL punctuation and converting to lowercase
 function cleanTranscribedText(text) {
   if (!text || typeof text !== 'string') {
     return '';
@@ -443,39 +443,136 @@ function cleanTranscribedText(text) {
   // Define punctuation characters to remove
   const punctuationChars = [',', '.', '?', '!', ';', ':', '"', "'", '(', ')', '[', ']', '{', '}', '-', '_', '/', '\\'];
   
-  // Convert to array for easier manipulation
-  let textArray = text.split('');
-  let punctuationIndexes = [];
+  let cleanedText = text;
   
-  // Find all punctuation indexes (backward loop to get correct indexes)
-  for (let i = textArray.length - 1; i >= 0; i--) {
-    if (punctuationChars.includes(textArray[i])) {
-      punctuationIndexes.push(i);
-    }
-  }
+  // Remove all punctuation characters
+  punctuationChars.forEach(char => {
+    cleanedText = cleanedText.replace(new RegExp('\\' + char, 'g'), '');
+  });
   
-  console.log(`🧹 [Text Cleaner] Found punctuation at indexes: [${punctuationIndexes.join(', ')}]`);
-  
-  // Remove punctuation characters (backward loop to maintain correct indexes)
-  for (let i = punctuationIndexes.length - 1; i >= 0; i--) {
-    const index = punctuationIndexes[i];
-    textArray.splice(index, 1);
-  }
-  
-  // Join back to string and clean up extra spaces
-  let cleanedText = textArray.join('')
+  // Clean up extra spaces, convert to lowercase, and trim
+  cleanedText = cleanedText
     .replace(/\s+/g, ' ')  // Replace multiple spaces with single space
-    .trim();               // Remove leading/trailing whitespace
+    .trim()                // Remove leading/trailing whitespace
+    .toLowerCase();        // Convert to lowercase
   
   console.log(`🧹 [Text Cleaner] Cleaned text: "${cleanedText}"`);
   
   return cleanedText;
 }
 
-// FIXED: Enhanced command matching function with proper case-insensitive suffix matching
+// Function to check if character is punctuation
+function isPunctuation(char) {
+  const punctuationChars = [',', '.', '?', '!', ';', ':', '"', "'", '(', ')', '[', ']', '{', '}', '-', '_', '/', '\\'];
+  return punctuationChars.includes(char);
+}
+
+// FIXED: Enhanced fuzzy parameter extraction function
+function extractParameterWithCasingAndPunctuation(originalText, extractedParameter, requestId) {
+  console.log(`\n🧩 [${requestId}] ===== ENHANCED PARAMETER EXTRACTION START =====`);
+  console.log(`🧩 [${requestId}] [Enhanced Extractor] Original text: "${originalText}"`);
+  console.log(`🧩 [${requestId}] [Enhanced Extractor] Extracted parameter (to enhance): "${extractedParameter}"`);
+  
+  const og = originalText;
+  const cleanedOgText = cleanTranscribedText(og);
+  const raw = extractedParameter.toLowerCase();
+  
+  console.log(`🧩 [${requestId}] [Enhanced Extractor] Cleaned og text: "${cleanedOgText}"`);
+  console.log(`🧩 [${requestId}] [Enhanced Extractor] Raw param: "${raw}"`);
+  console.log(`🧩 [${requestId}] [Enhanced Extractor] Original text length: ${og.length}`);
+  console.log(`🧩 [${requestId}] [Enhanced Extractor] Cleaned text length: ${cleanedOgText.length}`);
+  console.log(`🧩 [${requestId}] [Enhanced Extractor] Raw param length: ${raw.length}`);
+  
+  if (raw.length === 0 || cleanedOgText.length === 0) {
+    console.log(`❌ [${requestId}] [Enhanced Extractor] Empty input or parameter`);
+    return null;
+  }
+  
+  // STEP 1: Find where the extracted parameter appears in the cleaned text
+  console.log(`\n🔍 [${requestId}] [Enhanced Extractor] ===== STEP 1: FINDING PARAMETER POSITION IN CLEANED TEXT =====`);
+  
+  const paramStartInCleaned = cleanedOgText.indexOf(raw);
+  
+  if (paramStartInCleaned === -1) {
+    console.log(`❌ [${requestId}] [Enhanced Extractor] Parameter "${raw}" not found in cleaned text "${cleanedOgText}"`);
+    return null;
+  }
+  
+  const paramEndInCleaned = paramStartInCleaned + raw.length - 1;
+  
+  console.log(`🔍 [${requestId}] [Enhanced Extractor] Parameter found in cleaned text:`);
+  console.log(`🔍 [${requestId}] [Enhanced Extractor]   Start index: ${paramStartInCleaned}`);
+  console.log(`🔍 [${requestId}] [Enhanced Extractor]   End index: ${paramEndInCleaned}`);
+  console.log(`🔍 [${requestId}] [Enhanced Extractor]   Substring: "${cleanedOgText.substring(paramStartInCleaned, paramEndInCleaned + 1)}"`);
+  
+  // STEP 2: Map cleaned positions back to original text positions
+  console.log(`\n🗺️ [${requestId}] [Enhanced Extractor] ===== STEP 2: MAPPING TO ORIGINAL TEXT =====`);
+  console.log(`🗺️ [${requestId}] [Enhanced Extractor] Need to map cleaned[${paramStartInCleaned}] and cleaned[${paramEndInCleaned}] to original positions`);
+  console.log(`🗺️ [${requestId}] [Enhanced Extractor] Original text: "${og}"`);
+  console.log(`🗺️ [${requestId}] [Enhanced Extractor] Cleaned text:  "${cleanedOgText}"`);
+  
+  let originalStartIndex = -1;
+  let originalEndIndex = -1;
+  let cleanedPos = 0;
+  
+  console.log(`🗺️ [${requestId}] [Enhanced Extractor] Starting character mapping...`);
+  
+  for (let ogIdx = 0; ogIdx < og.length; ogIdx++) {
+    const char = og[ogIdx];
+    const isPunct = isPunctuation(char);
+    
+    console.log(`🗺️ [${requestId}] [Enhanced Extractor] og[${ogIdx}]='${char}' ${isPunct ? '(PUNCT)' : '(CHAR)'} -> cleanedPos=${cleanedPos}`);
+    
+    // Map start position
+    if (cleanedPos === paramStartInCleaned && originalStartIndex === -1) {
+      originalStartIndex = ogIdx;
+      console.log(`📍 [${requestId}] [Enhanced Extractor] >>> MAPPED START: cleaned[${paramStartInCleaned}] -> original[${ogIdx}] = '${char}' <<<`);
+    }
+    
+    // Map end position
+    if (cleanedPos === paramEndInCleaned && originalEndIndex === -1) {
+      originalEndIndex = ogIdx;
+      console.log(`📍 [${requestId}] [Enhanced Extractor] >>> MAPPED END: cleaned[${paramEndInCleaned}] -> original[${ogIdx}] = '${char}' <<<`);
+    }
+    
+    // Only increment cleaned position if character appears in cleaned text
+    if (!isPunct) {
+      cleanedPos++;
+      console.log(`🗺️ [${requestId}] [Enhanced Extractor]   cleanedPos incremented to ${cleanedPos}`);
+    } else {
+      console.log(`🗺️ [${requestId}] [Enhanced Extractor]   cleanedPos stays ${cleanedPos} (punctuation skipped)`);
+    }
+  }
+  
+  console.log(`\n🗺️ [${requestId}] [Enhanced Extractor] Mapping complete:`);
+  console.log(`🗺️ [${requestId}] [Enhanced Extractor] originalStartIndex: ${originalStartIndex}`);
+  console.log(`🗺️ [${requestId}] [Enhanced Extractor] originalEndIndex: ${originalEndIndex}`);
+  
+  if (originalStartIndex === -1 || originalEndIndex === -1) {
+    console.log(`❌ [${requestId}] [Enhanced Extractor] Could not map positions to original text`);
+    console.log(`❌ [${requestId}] [Enhanced Extractor] This is likely a bug in the mapping algorithm`);
+    return null;
+  }
+  
+  // Extract parameter with original punctuation and casing
+  const enhancedParameter = og.substring(originalStartIndex, originalEndIndex + 1);
+  
+  console.log(`\n🎉 [${requestId}] [Enhanced Extractor] ===== SUCCESS! =====`);
+  console.log(`🎉 [${requestId}] [Enhanced Extractor] Original text: "${originalText}"`);
+  console.log(`🎉 [${requestId}] [Enhanced Extractor] Cleaned positions: start=${paramStartInCleaned}, end=${paramEndInCleaned}`);
+  console.log(`🎉 [${requestId}] [Enhanced Extractor] Original positions: start=${originalStartIndex}, end=${originalEndIndex}`);
+  console.log(`🎉 [${requestId}] [Enhanced Extractor] Extracted parameter: "${enhancedParameter}"`);
+  console.log(`🎉 [${requestId}] [Enhanced Extractor] ===== END =====\n`);
+  
+  return enhancedParameter;
+}
+
+// ENHANCED: Command matching function with improved parameter extraction
 async function findMatchingCommand(userInput, userId, requestId) {
   try {
-    console.log(`🔍 [${requestId}] [Command Matcher] Starting command search...`);
+    console.log(`\n🔍 [${requestId}] ========================================`);
+    console.log(`🔍 [${requestId}] [Command Matcher] STARTING COMMAND SEARCH`);
+    console.log(`🔍 [${requestId}] ========================================`);
     console.log(`🔍 [${requestId}] [Command Matcher] Original input: "${userInput}"`);
     console.log(`🔍 [${requestId}] [Command Matcher] User ID: ${userId}`);
     
@@ -492,6 +589,7 @@ async function findMatchingCommand(userInput, userId, requestId) {
     }
     
     const query = 'SELECT * FROM commands WHERE user_id = $1 ORDER BY has_parameter ASC, command_name ASC';
+    console.log(`🔍 [${requestId}] [Command Matcher] Executing database query...`);
     const result = await pool.query(query, [userId]);
     
     console.log(`🔍 [${requestId}] [Command Matcher] Found ${result.rows.length} commands for user ${userId}`);
@@ -505,25 +603,33 @@ async function findMatchingCommand(userInput, userId, requestId) {
     }
     
     // Log all commands for debugging
-    console.log(`🔍 [${requestId}] [Command Matcher] Available commands:`);
+    console.log(`\n🔍 [${requestId}] [Command Matcher] ===== AVAILABLE COMMANDS =====`);
     result.rows.forEach((cmd, index) => {
-      console.log(`   ${index + 1}. "${cmd.command_name}" (Parameter: ${cmd.has_parameter ? cmd.parameter_name : 'none'})`);
+      console.log(`🔍 [${requestId}] [Command Matcher] ${index + 1}. "${cmd.command_name}" | Parameter: ${cmd.has_parameter ? `"${cmd.parameter_name}"` : 'none'} | Workflow: ${cmd.workflow_id}`);
     });
+    console.log(`🔍 [${requestId}] [Command Matcher] ========================================`);
     
     // STEP 2: First, check commands without parameters (exact match with proper case handling)
-    console.log(`🔍 [${requestId}] [Command Matcher] Checking exact matches...`);
+    console.log(`\n🔍 [${requestId}] [Command Matcher] ===== STEP 1: EXACT MATCHES (NO PARAMETERS) =====`);
+    
+    let exactMatchCount = 0;
     for (const command of result.rows) {
       if (!command.has_parameter) {
+        exactMatchCount++;
         // Clean the saved command name too
         const cleanedSavedCommand = cleanTranscribedText(command.command_name);
         
-        console.log(`🔍 [${requestId}] [Command Matcher] Testing exact match:`);
-        console.log(`     Cleaned user input: "${cleanedUserInput.toLowerCase()}"`);
-        console.log(`     Cleaned saved command: "${cleanedSavedCommand.toLowerCase()}"`);
+        console.log(`\n🔍 [${requestId}] [Command Matcher] Testing exact match ${exactMatchCount}:`);
+        console.log(`🔍 [${requestId}] [Command Matcher]   Original saved: "${command.command_name}"`);
+        console.log(`🔍 [${requestId}] [Command Matcher]   Cleaned saved:  "${cleanedSavedCommand}"`);
+        console.log(`🔍 [${requestId}] [Command Matcher]   User input:     "${cleanedUserInput}"`);
+        console.log(`🔍 [${requestId}] [Command Matcher]   Match: ${cleanedUserInput.toLowerCase() === cleanedSavedCommand.toLowerCase() ? 'YES' : 'NO'}`);
         
         // Compare both in lowercase
         if (cleanedUserInput.toLowerCase() === cleanedSavedCommand.toLowerCase()) {
-          console.log(`✅ [${requestId}] [Command Matcher] EXACT MATCH: ${command.command_name}`);
+          console.log(`✅ [${requestId}] [Command Matcher] >>> EXACT MATCH FOUND! <<<`);
+          console.log(`✅ [${requestId}] [Command Matcher] Command: "${command.command_name}"`);
+          console.log(`✅ [${requestId}] [Command Matcher] Workflow ID: ${command.workflow_id}`);
           
           return {
             success: true,
@@ -536,14 +642,22 @@ async function findMatchingCommand(userInput, userId, requestId) {
       }
     }
     
+    console.log(`🔍 [${requestId}] [Command Matcher] No exact matches found (tested ${exactMatchCount} commands)`);
+    
     // STEP 3: Then check commands with parameters
-    console.log(`🔍 [${requestId}] [Command Matcher] Checking parameterized matches...`);
+    console.log(`\n🔍 [${requestId}] [Command Matcher] ===== STEP 2: PARAMETERIZED MATCHES (WITH ENHANCED EXTRACTION) =====`);
+    
+    let paramMatchCount = 0;
     for (const command of result.rows) {
       if (command.has_parameter && command.parameter_name) {
+        paramMatchCount++;
         const savedCommand = command.command_name;
         const savedParam = command.parameter_name;
         
-        console.log(`🔍 [${requestId}] [Command Matcher] Testing parameterized: "${savedCommand}" with parameter "${savedParam}"`);
+        console.log(`\n🔍 [${requestId}] [Command Matcher] >>> Testing parameterized match ${paramMatchCount} <<<`);
+        console.log(`🔍 [${requestId}] [Command Matcher] Original saved command: "${savedCommand}"`);
+        console.log(`🔍 [${requestId}] [Command Matcher] Saved parameter name: "${savedParam}"`);
+        console.log(`🔍 [${requestId}] [Command Matcher] Workflow ID: ${command.workflow_id}`);
         
         // Clean the saved command
         const cleanedSavedCommand = cleanTranscribedText(savedCommand);
@@ -552,48 +666,73 @@ async function findMatchingCommand(userInput, userId, requestId) {
         console.log(`🔍 [${requestId}] [Command Matcher] Cleaned saved command: "${cleanedSavedCommand}"`);
         console.log(`🔍 [${requestId}] [Command Matcher] Cleaned saved parameter: "${cleanedSavedParam}"`);
         
-        // FIXED: Find where the parameter appears in the saved command (case insensitive)
+        // Find where the parameter appears in the saved command (case insensitive)
         const savedCommandLower = cleanedSavedCommand.toLowerCase();
         const savedParamLower = cleanedSavedParam.toLowerCase();
         const paramIndex = savedCommandLower.indexOf(savedParamLower);
         
+        console.log(`🔍 [${requestId}] [Command Matcher] Parameter index in command: ${paramIndex}`);
+        
         if (paramIndex === -1) {
-          console.error(`❌ [${requestId}] [Command Matcher] Parameter "${cleanedSavedParam}" not found in command "${cleanedSavedCommand}"`);
+          console.error(`❌ [${requestId}] [Command Matcher] ERROR: Parameter "${cleanedSavedParam}" not found in command "${cleanedSavedCommand}"`);
+          console.error(`❌ [${requestId}] [Command Matcher] This suggests data corruption or invalid saved command`);
           continue;
         }
         
-        // FIXED: Extract prefix and suffix using the lowercase versions for finding positions
+        // Extract prefix and suffix using the lowercase versions for finding positions
         const prefix = cleanedSavedCommand.substring(0, paramIndex);
         const suffix = cleanedSavedCommand.substring(paramIndex + cleanedSavedParam.length);
         
-        console.log(`🔍 [${requestId}] [Command Matcher] Pattern analysis:`);
-        console.log(`     Original command: "${cleanedSavedCommand}"`);
-        console.log(`     Parameter: "${cleanedSavedParam}"`);
-        console.log(`     Prefix: "${prefix}"`);
-        console.log(`     Suffix: "${suffix}"`);
+        console.log(`🔍 [${requestId}] [Command Matcher] Pattern breakdown (cleaned):`);
+        console.log(`🔍 [${requestId}] [Command Matcher]   Prefix: "${prefix}"`);
+        console.log(`🔍 [${requestId}] [Command Matcher]   Parameter: "${cleanedSavedParam}"`);
+        console.log(`🔍 [${requestId}] [Command Matcher]   Suffix: "${suffix}"`);
         
-        // FIXED: Check if user input matches this pattern (case insensitive)
-        const inputLower = cleanedUserInput.toLowerCase();
-        const prefixLower = prefix.toLowerCase();
-        const suffixLower = suffix.toLowerCase();
+        // Check if user input matches this pattern (both already cleaned)
+        console.log(`🔍 [${requestId}] [Command Matcher] Pattern matching (both cleaned):`);
+        console.log(`🔍 [${requestId}] [Command Matcher]   User input: "${cleanedUserInput}"`);
+        console.log(`🔍 [${requestId}] [Command Matcher]   Prefix: "${prefix}"`);
+        console.log(`🔍 [${requestId}] [Command Matcher]   Suffix: "${suffix}"`);
+        console.log(`🔍 [${requestId}] [Command Matcher]   Starts with prefix: ${cleanedUserInput.startsWith(prefix)}`);
+        console.log(`🔍 [${requestId}] [Command Matcher]   Ends with suffix: ${cleanedUserInput.endsWith(suffix)}`);
+        console.log(`🔍 [${requestId}] [Command Matcher]   Overall pattern match: ${cleanedUserInput.startsWith(prefix) && cleanedUserInput.endsWith(suffix)}`);
         
-        console.log(`🔍 [${requestId}] [Command Matcher] Pattern matching (all lowercase):`);
-        console.log(`     User input: "${inputLower}"`);
-        console.log(`     Prefix: "${prefixLower}"`);
-        console.log(`     Suffix: "${suffixLower}"`);
-        console.log(`     Starts with prefix: ${inputLower.startsWith(prefixLower)}`);
-        console.log(`     Ends with suffix: ${inputLower.endsWith(suffixLower)}`);
-        
-        if (inputLower.startsWith(prefixLower) && inputLower.endsWith(suffixLower)) {
-          // Extract the parameter value from user input (preserve original case)
-          const paramValue = cleanedUserInput.substring(prefix.length, cleanedUserInput.length - suffix.length).trim();
+        if (cleanedUserInput.startsWith(prefix) && cleanedUserInput.endsWith(suffix)) {
+          console.log(`✅ [${requestId}] [Command Matcher] >>> PATTERN MATCHES! Using enhanced extraction for casing/punctuation... <<<`);
           
-          console.log(`✅ [${requestId}] [Command Matcher] PARAMETER MATCH! Extracted parameter: "${paramValue}"`);
+          // BASIC EXTRACTION (from working version)
+          const basicParamValue = cleanedUserInput.substring(prefix.length, cleanedUserInput.length - suffix.length).trim();
+          console.log(`📝 [${requestId}] [Command Matcher] Basic extracted parameter: "${basicParamValue}"`);
+          
+          // ENHANCED EXTRACTION (preserve casing and punctuation)
+          let enhancedParamValue = basicParamValue;
+          
+          // Only use enhanced extraction if we have a basic match
+          if (basicParamValue) {
+            console.log(`🔧 [${requestId}] [Command Matcher] Attempting enhanced parameter extraction...`);
+            
+            const enhancedParam = extractParameterWithCasingAndPunctuation(userInput, basicParamValue, requestId);
+            
+            if (enhancedParam) {
+              enhancedParamValue = enhancedParam;
+              console.log(`✅ [${requestId}] [Command Matcher] Enhanced extraction successful: "${enhancedParam}"`);
+            } else {
+              console.log(`⚠️ [${requestId}] [Command Matcher] Enhanced extraction failed, using basic: "${basicParamValue}"`);
+            }
+          }
+          
+          console.log(`\n🎉 [${requestId}] [Command Matcher] ========================================`);
+          console.log(`🎉 [${requestId}] [Command Matcher] >>> PARAMETERIZED MATCH FOUND! <<<`);
+          console.log(`🎉 [${requestId}] [Command Matcher] ========================================`);
+          console.log(`🎉 [${requestId}] [Command Matcher] Original command: "${savedCommand}"`);
+          console.log(`🎉 [${requestId}] [Command Matcher] Final extracted parameter: "${enhancedParamValue}"`);
+          console.log(`🎉 [${requestId}] [Command Matcher] Workflow ID: ${command.workflow_id}`);
+          console.log(`🎉 [${requestId}] [Command Matcher] ========================================`);
           
           return {
             success: true,
             command: command.command_name,
-            parameter: paramValue,
+            parameter: enhancedParamValue,
             workflow_id: command.workflow_id,
             message: 'Ready to execute workflow with parameter'
           };
@@ -601,23 +740,43 @@ async function findMatchingCommand(userInput, userId, requestId) {
           // DEBUGGING: Show why it didn't match
           console.log(`❌ [${requestId}] [Command Matcher] Pattern mismatch for "${savedCommand}":`);
           if (!inputLower.startsWith(prefixLower)) {
-            console.log(`     ❌ Prefix mismatch: "${inputLower}" does not start with "${prefixLower}"`);
+            console.log(`❌ [${requestId}] [Command Matcher]   Prefix mismatch: "${inputLower}" does not start with "${prefixLower}"`);
           }
           if (!inputLower.endsWith(suffixLower)) {
-            console.log(`     ❌ Suffix mismatch: "${inputLower}" does not end with "${suffixLower}"`);
+            console.log(`❌ [${requestId}] [Command Matcher]   Suffix mismatch: "${inputLower}" does not end with "${suffixLower}"`);
           }
+          console.log(`❌ [${requestId}] [Command Matcher] Skipping this command...`);
         }
       }
     }
     
-    console.log(`❌ [${requestId}] [Command Matcher] No matching command found`);
+    console.log(`\n❌ [${requestId}] [Command Matcher] ========================================`);
+    console.log(`❌ [${requestId}] [Command Matcher] NO MATCHING COMMAND FOUND`);
+    console.log(`❌ [${requestId}] [Command Matcher] ========================================`);
+    console.log(`❌ [${requestId}] [Command Matcher] Tested ${exactMatchCount} exact matches`);
+    console.log(`❌ [${requestId}] [Command Matcher] Tested ${paramMatchCount} parameterized matches`);
+    console.log(`❌ [${requestId}] [Command Matcher] User input: "${userInput}"`);
+    console.log(`❌ [${requestId}] [Command Matcher] Cleaned input: "${cleanedUserInput}"`);
+    console.log(`❌ [${requestId}] [Command Matcher] Available commands:`);
+    result.rows.forEach((cmd, index) => {
+      console.log(`❌ [${requestId}] [Command Matcher]   ${index + 1}. "${cmd.command_name}" (${cmd.has_parameter ? 'with parameter' : 'no parameter'})`);
+    });
+    console.log(`❌ [${requestId}] [Command Matcher] ========================================`);
+    
     return {
       success: false,
       message: 'No matching command found'
     };
     
   } catch (error) {
-    console.error(`❌ [${requestId}] [Command Matcher] Database error:`, error);
+    console.error(`❌ [${requestId}] [Command Matcher] ========================================`);
+    console.error(`❌ [${requestId}] [Command Matcher] DATABASE ERROR`);
+    console.error(`❌ [${requestId}] [Command Matcher] ========================================`);
+    console.error(`❌ [${requestId}] [Command Matcher] Error name: ${error.name}`);
+    console.error(`❌ [${requestId}] [Command Matcher] Error message: ${error.message}`);
+    console.error(`❌ [${requestId}] [Command Matcher] Error code: ${error.code}`);
+    console.error(`❌ [${requestId}] [Command Matcher] Error stack:`, error.stack);
+    console.error(`❌ [${requestId}] [Command Matcher] ========================================`);
     throw error;
   }
 }
