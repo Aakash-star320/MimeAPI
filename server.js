@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import FormData from 'form-data';
 import fetch from 'node-fetch';
+import { v4 as uuidv4 } from 'uuid';
 import 'dotenv/config';
 
 
@@ -154,6 +155,26 @@ app.get('/', (req, res) => {
     status: 'running',
     timestamp: new Date().toISOString()
   });
+});
+
+// Get or generate user ID endpoint
+app.get('/get-user-id', (req, res) => {
+  console.log('🆔 [Express] Get user ID endpoint accessed');
+  
+  // Generate a new UUID for the user
+  const userId = uuidv4();
+  
+  console.log(`🆔 [Express] Generated new user ID: ${userId}`);
+  
+  const response = {
+    success: true,
+    user_id: userId,
+    message: 'User ID generated successfully',
+    timestamp: new Date().toISOString()
+  };
+  
+  console.log(`📤 [Express] Sending user ID response:`, response);
+  res.json(response);
 });
 
 // Health check endpoint for the extension
@@ -567,7 +588,8 @@ function extractParameterWithCasingAndPunctuation(originalText, extractedParamet
   return enhancedParameter;
 }
 
-// ENHANCED: Command matching function with improved parameter extraction
+// REPLACE THE ENTIRE findMatchingCommand function in your server.js with this fixed version:
+
 async function findMatchingCommand(userInput, userId, requestId) {
   try {
     console.log(`\n🔍 [${requestId}] ========================================`);
@@ -737,13 +759,13 @@ async function findMatchingCommand(userInput, userId, requestId) {
             message: 'Ready to execute workflow with parameter'
           };
         } else {
-          // DEBUGGING: Show why it didn't match
+          // DEBUGGING: Show why it didn't match - FIXED VERSION
           console.log(`❌ [${requestId}] [Command Matcher] Pattern mismatch for "${savedCommand}":`);
-          if (!inputLower.startsWith(prefixLower)) {
-            console.log(`❌ [${requestId}] [Command Matcher]   Prefix mismatch: "${inputLower}" does not start with "${prefixLower}"`);
+          if (!cleanedUserInput.startsWith(prefix)) {
+            console.log(`❌ [${requestId}] [Command Matcher]   Prefix mismatch: "${cleanedUserInput}" does not start with "${prefix}"`);
           }
-          if (!inputLower.endsWith(suffixLower)) {
-            console.log(`❌ [${requestId}] [Command Matcher]   Suffix mismatch: "${inputLower}" does not end with "${suffixLower}"`);
+          if (!cleanedUserInput.endsWith(suffix)) {
+            console.log(`❌ [${requestId}] [Command Matcher]   Suffix mismatch: "${cleanedUserInput}" does not end with "${suffix}"`);
           }
           console.log(`❌ [${requestId}] [Command Matcher] Skipping this command...`);
         }
@@ -780,6 +802,7 @@ async function findMatchingCommand(userInput, userId, requestId) {
     throw error;
   }
 }
+
 
 // Save command endpoint - ENHANCED VERSION WITH BETTER LOGGING
 app.post('/save-command', async (req, res) => {
@@ -925,6 +948,197 @@ app.get('/commands/:userId', async (req, res) => {
   }
 });
 
+
+app.delete('/commands/workflow/:workflowId', async (req, res) => {
+  const workflowId = req.params.workflowId;
+  const { user_id } = req.body; // User ID sent in request body
+  const requestId = `delete-workflow-${Date.now()}`;
+  
+  console.log(`\n🗑️ [${requestId}] ===== DELETE WORKFLOW COMMANDS REQUEST =====`);
+  console.log(`🗑️ [${requestId}] Timestamp: ${new Date().toISOString()}`);
+  console.log(`🗑️ [${requestId}] Workflow ID: ${workflowId}`);
+  console.log(`🗑️ [${requestId}] User ID: ${user_id}`);
+  
+  // Validate required parameters
+  if (!workflowId) {
+    console.error(`❌ [${requestId}] Missing workflow ID`);
+    return res.status(400).json({
+      success: false,
+      error: 'Missing workflow ID',
+      request_id: requestId
+    });
+  }
+  
+  if (!user_id) {
+    console.error(`❌ [${requestId}] Missing user ID`);
+    return res.status(400).json({
+      success: false,
+      error: 'Missing user ID',
+      request_id: requestId
+    });
+  }
+  
+  try {
+    console.log(`🗑️ [${requestId}] Searching for commands to delete...`);
+    
+    // First, find all commands for this workflow and user
+    const findQuery = 'SELECT * FROM commands WHERE workflow_id = $1 AND user_id = $2';
+    const findResult = await pool.query(findQuery, [workflowId, user_id]);
+    
+    const commandsToDelete = findResult.rows;
+    console.log(`🗑️ [${requestId}] Found ${commandsToDelete.length} commands to delete`);
+    
+    if (commandsToDelete.length === 0) {
+      console.log(`ℹ️ [${requestId}] No commands found for workflow ${workflowId}`);
+      return res.json({
+        success: true,
+        message: 'No commands found for this workflow',
+        deleted_count: 0,
+        commands: [],
+        request_id: requestId
+      });
+    }
+    
+    // Log what we're about to delete
+    console.log(`🗑️ [${requestId}] Commands to delete:`);
+    commandsToDelete.forEach((cmd, index) => {
+      console.log(`🗑️ [${requestId}]   ${index + 1}. "${cmd.command_name}" (ID: ${cmd.id})`);
+    });
+    
+    // Delete all commands for this workflow and user
+    const deleteQuery = 'DELETE FROM commands WHERE workflow_id = $1 AND user_id = $2 RETURNING *';
+    const deleteResult = await pool.query(deleteQuery, [workflowId, user_id]);
+    
+    const deletedCommands = deleteResult.rows;
+    console.log(`✅ [${requestId}] Successfully deleted ${deletedCommands.length} commands`);
+    
+    // Log what was deleted
+    console.log(`✅ [${requestId}] Deleted commands:`);
+    deletedCommands.forEach((cmd, index) => {
+      console.log(`✅ [${requestId}]   ${index + 1}. "${cmd.command_name}" (ID: ${cmd.id})`);
+    });
+    
+    const response = {
+      success: true,
+      message: `Successfully deleted ${deletedCommands.length} voice commands`,
+      deleted_count: deletedCommands.length,
+      commands: deletedCommands.map(cmd => ({
+        id: cmd.id,
+        command_name: cmd.command_name,
+        has_parameter: cmd.has_parameter,
+        parameter_name: cmd.parameter_name
+      })),
+      workflow_id: workflowId,
+      user_id: user_id,
+      request_id: requestId,
+      timestamp: new Date().toISOString()
+    };
+    
+    console.log(`📤 [${requestId}] Sending success response:`, {
+      ...response,
+      commands: `[${response.deleted_count} commands]` // Don't log full command details
+    });
+    
+    res.json(response);
+    
+  } catch (error) {
+    console.error(`❌ [${requestId}] Database error deleting workflow commands:`);
+    console.error(`❌ [${requestId}] Error name: ${error.name}`);
+    console.error(`❌ [${requestId}] Error message: ${error.message}`);
+    console.error(`❌ [${requestId}] Error code: ${error.code}`);
+    console.error(`❌ [${requestId}] Error stack:`, error.stack);
+    
+    // Check for specific database errors
+    let errorMessage = 'Database delete failed';
+    if (error.code === '23503') { // Foreign key violation
+      errorMessage = 'Cannot delete commands - foreign key constraint';
+    } else if (error.code === '42P01') { // Table doesn't exist
+      errorMessage = 'Commands table not found';
+    }
+    
+    const errorResponse = {
+      success: false,
+      error: errorMessage,
+      details: error.message,
+      workflow_id: workflowId,
+      user_id: user_id,
+      request_id: requestId,
+      timestamp: new Date().toISOString()
+    };
+    
+    console.log(`📤 [${requestId}] Sending error response:`, errorResponse);
+    res.status(500).json(errorResponse);
+  }
+  
+  console.log(`🏁 [${requestId}] ===== DELETE WORKFLOW COMMANDS REQUEST END =====\n`);
+});
+
+// ALSO UPDATE the existing individual command delete endpoint for better logging:
+app.delete('/commands/:id', async (req, res) => {
+  const commandId = req.params.id;
+  const requestId = `delete-cmd-${Date.now()}`;
+  
+  console.log(`\n🗑️ [${requestId}] ===== DELETE INDIVIDUAL COMMAND REQUEST =====`);
+  console.log(`🗑️ [${requestId}] Command ID: ${commandId}`);
+  
+  try {
+    // First get the command details before deleting
+    const getQuery = 'SELECT * FROM commands WHERE id = $1';
+    const getResult = await pool.query(getQuery, [commandId]);
+    
+    if (getResult.rows.length === 0) {
+      console.log(`⚠️ [${requestId}] Command ${commandId} not found`);
+      return res.status(404).json({
+        success: false,
+        error: 'Command not found',
+        command_id: commandId,
+        request_id: requestId
+      });
+    }
+    
+    const commandToDelete = getResult.rows[0];
+    console.log(`🗑️ [${requestId}] Deleting command: "${commandToDelete.command_name}"`);
+    
+    // Delete the command
+    const deleteQuery = 'DELETE FROM commands WHERE id = $1 RETURNING *';
+    const deleteResult = await pool.query(deleteQuery, [commandId]);
+    
+    const deletedCommand = deleteResult.rows[0];
+    
+    console.log(`✅ [${requestId}] Successfully deleted command: "${deletedCommand.command_name}"`);
+    
+    const response = {
+      success: true,
+      message: 'Command deleted successfully',
+      command: {
+        id: deletedCommand.id,
+        command_name: deletedCommand.command_name,
+        workflow_id: deletedCommand.workflow_id
+      },
+      request_id: requestId
+    };
+    
+    console.log(`📤 [${requestId}] Sending success response:`, response);
+    res.json(response);
+    
+  } catch (error) {
+    console.error(`❌ [${requestId}] Error deleting command ${commandId}:`, error);
+    
+    const errorResponse = {
+      success: false,
+      error: 'Failed to delete command',
+      details: error.message,
+      command_id: commandId,
+      request_id: requestId
+    };
+    
+    console.log(`📤 [${requestId}] Sending error response:`, errorResponse);
+    res.status(500).json(errorResponse);
+  }
+  
+  console.log(`🏁 [${requestId}] ===== DELETE INDIVIDUAL COMMAND REQUEST END =====\n`);
+});
+
 app.delete('/commands/:id', async (req, res) => {
   const commandId = req.params.id;
   console.log(`🗑️ [Database] Deleting command ID: ${commandId}`);
@@ -957,6 +1171,7 @@ app.listen(port, () => {
   console.log(`\n📊 Available endpoints:`);
   console.log(`   GET  / - Root endpoint`);
   console.log(`   GET  /health - Health check`);
+  console.log(`   GET  /get-user-id - Generate user ID`);
   console.log(`   POST /voice-command - Voice transcription & execution`);
   console.log(`   POST /execute-command - Text command execution`);
   console.log(`   GET  /commands/:userId - List user commands`);
