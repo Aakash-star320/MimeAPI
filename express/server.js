@@ -211,7 +211,7 @@ app.post('/voice-command', upload.single('audio'), async (req, res) => {
   console.log(`🕒 [${requestId}] Timestamp: ${new Date().toISOString()}`);
   
   // Log request details
-  console.log(`📨 [${requestId}] Request body keys:`, Object.keys(req.body));
+  console.log(`📨  Request body keys:`, Object.keys(req.body));
   console.log(`📨 [${requestId}] User ID from body:`, req.body.user_id);
   console.log(`📨 [${requestId}] File upload status:`, req.file ? 'RECEIVED' : 'MISSING');
   

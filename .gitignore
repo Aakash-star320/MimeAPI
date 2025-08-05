@@ -1,1 +1,20 @@
+# Global ignores
+*.log
 .env
+.env.*
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+node_modules/
+uploads/
+
+# Express ignores
+express/node_modules
+express/.env
+express/uploads
+
+# FastAPI ignores
+fastAPI/__pycache__/
+fastAPI/.env
+fastAPI/venv/
