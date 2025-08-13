@@ -1,4 +1,5 @@
 import whisper
+from dotenv import load_dotenv
 import os
 import tempfile
 import logging
@@ -9,6 +10,10 @@ from typing import Optional
 import uvicorn
 import time
 import traceback
+
+load_dotenv()
+EXPRESS_SERVER_URL=os.getenv("EXPRESS_BASE_URL")
+origins = [EXPRESS_SERVER_URL]
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,9 +29,13 @@ app=FastAPI(
     description="OpenAI Whisper speech to text server for Mime voice command"
 )
 
+origins=[
+    "https://abundant-merissa-aakash-star320-05713f07.koyeb.app",  # Express server
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
+    allow_origins=origins,  # In production, replace with specific origins
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,6 +49,7 @@ class TranscriptedResponse(BaseModel):
     processing_time_ms: Optional[int]=None
     language: Optional[str] = None
     confidence: Optional[float] = None
+    message: Optional[str] = None
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -56,7 +66,7 @@ async def initialize_whisper_mode():
     try:
         print("Loading whisper 'base' model")
         start_time=time.time()
-        whisper_model=whisper.load_model("base")
+        whisper_model=whisper.load_model("medium")
         load_time=(time.time()-start_time)*1000
         print(f"✅ FastAPI whisper model loaded in {load_time} ms")
     except Exception as e:

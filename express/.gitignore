@@ -1,0 +1,9 @@
+# Ignore environment files
+.env
+
+# Ignore Docker-related files
+.dockerignore
+
+# Node example (if using Node.js)
+node_modules/
+dist/

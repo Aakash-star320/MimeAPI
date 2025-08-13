@@ -1,5 +1,5 @@
 
-FROM node:18
+FROM node:lts-slim
 
 WORKDIR /app
 
